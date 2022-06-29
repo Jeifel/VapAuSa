@@ -1,3 +1,13 @@
+/* This script prints temperature measurements
+ *  made with a DS18B20 sensor to a SSD1360 Display
+ * 
+ * it requires the following libraries:
+ *   OneWire
+ *   DallasTemperature
+ *   Wire
+ *   Adafruit_SSD1306
+ */
+
 //-------------- DS18B20 Temperature sensor ----------
 #include <OneWire.h>
 #include <DallasTemperature.h>
@@ -18,7 +28,7 @@ DallasTemperature sensors(&oneWire);
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
 
-// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
+// SSD1306 is has to be connected to I2C (SDA, SCL pins)
 // Arduino UNO/Nano/ProMini:       A4(SDA), A5(SCL)
 #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
 #define SCREEN_ADDRESS 0x3C ///< See datasheet: 0x3C for 128x32
