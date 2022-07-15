@@ -7,7 +7,8 @@
 
 /*-----( Declare Constants and Pin Numbers )-----*/
 
-#define VALVE_UPDATE_INTERVAL 1000
+#define INPUT_BUFFER_SIZE 32
+char inputBuffer[INPUT_BUFFER_SIZE];
 
 // software serial
 #define RS485_RX  4  //Serial Receive pin
@@ -23,20 +24,53 @@
 #define SHIFT_REGISTER_NUM 3  // number of shift registers
 #define REGISTER_PIN_NUM SHIFT_REGISTER_NUM * 8
 
-/*-----( Declare objects and variables )-----*/
-SoftwareSerial RS485 (RS485_RX, RS485_TX);
-boolean registers[REGISTER_PIN_NUM];
-unsigned int latestValveUpdate;
 
-/*------------------------------------*/
+/*----------------------------*/
 struct valveSlotType{
   byte box;
   byte slot;  
 };
 
+/*-----( Declare objects and variables )-----*/
+SoftwareSerial RS485 (RS485_RX, RS485_TX);
+boolean registers[REGISTER_PIN_NUM];
+
+void open_RS485(){
+  digitalWrite(RS485_EN,HIGH);
+  delay(50);
+}
+
+void close_RS485(){
+  RS485.flush();
+  digitalWrite(RS485_EN,LOW);
+}
+
+byte get_RS485Response(){  
+  
+  byte responseLength = RS485.readBytesUntil('\0',inputBuffer,INPUT_BUFFER_SIZE-1);
+
+  if(responseLength){
+    inputBuffer[responseLength-1]='\0';
+    byte offset=0;
+    for(byte i=0; i<responseLength;i++){
+      if(inputBuffer[offset]=='<') break;
+      offset++;
+    }    
+    Serial.println(inputBuffer+offset);
+    inputBuffer[0]='\0';
+  }else{
+    Serial.println("< x");
+  } 
+
+   return responseLength;
+}
+
+/*------------------------------------*/
+
+
 //------- valve control stuff ----------
 
-valveSlotType primaryValve   = {0,1};
+valveSlotType primaryValve   = {0,REGISTER_PIN_NUM};
 valveSlotType groupValve   = {0,0};
 
 //.............................
@@ -65,8 +99,8 @@ valveSlotType parse_valveSlot(char *arg){
 void update_valves(){
 
   for(int i = REGISTER_PIN_NUM - 1; i >=  0; i--){
-     registers[i] = (primaryValve.box==0 & (primaryValve.slot-1)==i) ||
-                    (groupValve.box==0   & (groupValve.slot-1)==i);
+     registers[i] = (primaryValve.box==0 & (REGISTER_PIN_NUM - primaryValve.slot)==i) ||
+                    (groupValve.box==0   & (REGISTER_PIN_NUM - groupValve.slot)==i);
   }
 
   digitalWrite(PIN_ST_CP, LOW);
@@ -78,8 +112,7 @@ void update_valves(){
   }
   digitalWrite(PIN_ST_CP, HIGH);
 
-  digitalWrite(RS485_EN, HIGH);
-  delay(50);
+  open_RS485();
   RS485.print("valve ");
   RS485.print(primaryValve.box);
   RS485.print('#');
@@ -88,12 +121,8 @@ void update_valves(){
   RS485.print(' ');
   RS485.print(groupValve.box);
   RS485.print('#');
-  RS485.print(groupValve.slot);
-  RS485.print("\r\n");
-  RS485.flush();
-  digitalWrite(RS485_EN, LOW);
-
-  latestValveUpdate = millis();  
+  RS485.println(groupValve.slot);
+  close_RS485();
 }
 
 //.........................................
@@ -111,6 +140,8 @@ void get_activeValve(){
   Serial.println();
 }
 
+//==========================================
+
 void cmd_valve(int arg_cnt, char **args){
 
   // in case no second argument was passed, just print the active valve
@@ -125,13 +156,53 @@ void cmd_valve(int arg_cnt, char **args){
   
   update_valves();  
 }
+//.........................
 
-/*-------------------------------------*/
+//........................................
+void cmd_test(int arg_cnt, char **args){
+  
+  if(arg_cnt > 1){
+    byte targetID = atoi(args[1]);
+    if(targetID){      
+      open_RS485();
+        RS485.print("test ");
+        RS485.println(targetID);
+      close_RS485();
+      return;
+    } 
+  }  
+  
+  valveSlotType backupPrimaryValve = {primaryValve.box, primaryValve.slot};
+  primaryValve.box=16;
 
+    for(byte n=0; n<REGISTER_PIN_NUM; n++){    
+      primaryValve.slot=(n+1);
+      update_valves();
+      delay(500);
+    }
 
-//==========================================
+   primaryValve.box = backupPrimaryValve.box;
+   primaryValve.slot = backupPrimaryValve.slot;
+}
+
+//.........................
 
 void cmd_identify(int arg_cnt, char **args){
+  byte targetID = 0;
+  if(arg_cnt>1) targetID = atoi(args[1]);
+
+  if(targetID){
+    byte responseLength = 0;
+    
+    open_RS485();
+      RS485.print("? ");
+      RS485.println(targetID);
+    close_RS485();
+    delay(20);
+    get_RS485Response();
+    return;
+  }
+  
   Serial.print(DEVICE);
   Serial.print(' ');
   Serial.print(MODEL);
@@ -139,14 +210,42 @@ void cmd_identify(int arg_cnt, char **args){
   Serial.println(VERSION);  
 }
 
+//......................................
+void cmd_scan(int arg_cnt, char **args){
+  
+  byte boxID = 0;
+  
+  if(arg_cnt==2){
+    boxID =  atoi(args[1]);
+  }  
+
+  if(boxID==0){    
+    Serial.print("0;");
+    Serial.print(REGISTER_PIN_NUM);
+    Serial.print(";");
+    Serial.println(REGISTER_PIN_NUM);
+    return;
+  }
+  
+  open_RS485();
+    RS485.print("?? ");
+    RS485.println(boxID);
+  close_RS485();
+  delay(20);
+  get_RS485Response();  
+}
+
+//--------------------------------------------
 void setup(){
 
   // first measure: disable shift register outputs
   pinMode(PIN_OE, OUTPUT);
   digitalWrite(PIN_OE, HIGH);
 
-  cmdInit(9600);  
+  cmdInit(9600);
   cmdAdd("?", cmd_identify);
+  cmdAdd("??", cmd_scan);
+  cmdAdd("test", cmd_test);
   cmdAdd("valve", cmd_valve);
 
   pinMode(RS485_EN, OUTPUT);
