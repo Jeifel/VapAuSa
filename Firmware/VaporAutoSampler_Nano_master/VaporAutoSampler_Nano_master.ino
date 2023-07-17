@@ -116,12 +116,12 @@ void update_valves(){
   RS485.print("valve ");
   RS485.print(primaryValve.box);
   RS485.print('#');
-  RS485.print(primaryValve.slot);
-  RS485.print("\r\n");
+  RS485.print(primaryValve.slot); 
   RS485.print(' ');
   RS485.print(groupValve.box);
   RS485.print('#');
-  RS485.println(groupValve.slot);
+  RS485.print(groupValve.slot);
+  RS485.print("\r\n");
   close_RS485();
 }
 
